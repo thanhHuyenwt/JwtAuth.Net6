@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using JWTAth.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -17,10 +19,25 @@ namespace JWTAth.Controllers
     {
         public static User user = new User();
         private readonly IConfiguration _configuration;
+        private readonly IUserService UserService;
 
-        public AuthController(IConfiguration configuration)
+        public AuthController(IConfiguration configuration, IUserService userService)
         {
             _configuration = configuration;
+            UserService = userService;
+        }
+
+        
+        //read infor in Claim in jwt sent with api request
+        [HttpGet,Authorize]
+        public ActionResult<string> GetUserInforInJwt()
+        {
+            var userName = UserService.GetMyName(); 
+            return Ok(userName);  
+            //var userName = User?.Identity?.Name;
+            //var userName2 = User.FindFirstValue(ClaimTypes.Name);
+            //var role = User.FindFirstValue(ClaimTypes.Role);
+            //return Ok(new { userName, userName2, role });
         }
 
         [HttpPost("register")]
@@ -48,8 +65,56 @@ namespace JWTAth.Controllers
             }
 
             string token = CreateToken(user);
+            var refreshToken = GenerateRefreshToken();
+            SetRefreshToken(refreshToken);
             return Ok(token);
 
+        }
+
+        //client need call this api when access token expires and get 401 from server => ask for refresh token and try again
+
+        [HttpPost("refresh-token")]
+
+        public ActionResult<string> RefreshToken()
+        {
+            var refreshToken = Request.Cookies["refreshToken"]; 
+            if(!user.RefreshToken.Equals(refreshToken))
+            {
+                return Unauthorized("Invalid Refresh Token");
+            }
+            else if(user.TokenExpires< DateTime.Now)
+            {
+                return Unauthorized("Token Expires"); //=> user has to login to create new token and refresh token
+            }
+
+            string token = CreateToken(user);
+            var newRefreshToken = GenerateRefreshToken();
+            SetRefreshToken(newRefreshToken);
+            return Ok(token);
+        }
+        private RefreshToken GenerateRefreshToken()
+        {
+            var refreshToken = new RefreshToken
+            {
+                Token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)),
+                Expires = DateTime.Now.AddDays(7),
+                CreatedTime = DateTime.Now
+            };
+            return refreshToken;
+        }
+
+        private void SetRefreshToken(RefreshToken newRefreshToken)
+        {
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Expires = newRefreshToken.Expires
+            };
+            Response.Cookies.Append("refreshToken", newRefreshToken.Token, cookieOptions);
+
+            user.RefreshToken = newRefreshToken.Token;
+            user.TokenCreated = newRefreshToken.CreatedTime;
+            user.TokenExpires = newRefreshToken.Expires;
         }
 
         private string CreateToken(User user)
@@ -90,7 +155,6 @@ namespace JWTAth.Controllers
             }
         }
 
-        //!!!???password send over http as plain text=> security problem=> suggest solution:md5 encrypt before sending request api 
         //verify user password at login 
         //using passwordSalt created for user at register=> create hash for user input password at login
         // compare result with stored passwordHash to auth
