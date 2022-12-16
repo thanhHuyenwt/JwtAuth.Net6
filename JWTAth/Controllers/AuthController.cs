@@ -97,7 +97,7 @@ namespace JWTAth.Controllers
             var refreshToken = new RefreshToken
             {
                 Token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)),
-                Expires = DateTime.Now.AddDays(7),
+                Expires = DateTime.Now.AddDays(1),
                 CreatedTime = DateTime.Now
             };
             return refreshToken;
@@ -135,7 +135,7 @@ namespace JWTAth.Controllers
             var credential = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
             var token =new JwtSecurityToken(
                 claims: claims,
-                expires: DateTime.Now.AddDays(1),
+                expires: DateTime.Now.AddSeconds(15),
                 signingCredentials:credential
                 );
             var jwt = new JwtSecurityTokenHandler().WriteToken(token);
